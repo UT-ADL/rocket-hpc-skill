@@ -55,7 +55,24 @@ The skill always asks which Slurm account to charge (`-A`) unless it's obvious. 
 it in your project's `CLAUDE.md`, e.g. `Charge Slurm jobs to account <account> (-A <account>).` To see your accounts:
 `sacctmgr show association where user=$USER format=account`.
 
+### 5. Recommended Claude Code settings
+
+Agents waiting on Slurm jobs burn most of their tokens re-processing context on each wake-up. In `~/.claude/settings.json`:
+
+```json
+{
+  "subagentPromptCacheTtl": "1h",
+  "env": { "BASH_MAX_TIMEOUT_MS": "3300000" }
+}
+```
+
+- `subagentPromptCacheTtl`: subagents otherwise get a 5-minute prompt cache, even on a subscription (needs Claude Code
+  v2.1.242+).
+- `BASH_MAX_TIMEOUT_MS`: lets a single `scripts/wait_jobs.sh` call block for up to 55 minutes.
+
 ### Update and uninstall
+
+Existing installs pick up new versions (e.g. `scripts/wait_jobs.sh`) with a pull:
 
 ```bash
 git -C ~/.claude/skills/rocket-hpc pull        # update
@@ -73,6 +90,7 @@ rm -rf ~/.claude/skills/rocket-hpc             # uninstall
 | `scripts/hpc_cost.py` | EUR cost of jobs from `sacct`, by job, GPU type, day or user |
 | `scripts/job_efficiency.py` | requested vs used CPU and memory, suggested `--mem` (Rocket has no `seff`) |
 | `scripts/watch_jobs.py` | flags stuck jobs and jobs lagging a reference run, optionally cancels them |
+| `scripts/wait_jobs.sh` | blocks until a job leaves PENDING/RUNNING (or a time cap), then prints compact `sacct` lines |
 
 The scripts also work without Claude, e.g. `python3 scripts/hpc_cost.py --account <acct> --start 2026-09-01`.
 

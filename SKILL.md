@@ -16,6 +16,7 @@ Reference files (read when needed):
 - `scripts/hpc_cost.py`: EUR cost of your or your account's jobs from Slurm accounting.
 - `scripts/job_efficiency.py`: requested vs used CPU and memory for finished or running jobs (`seff` is not installed).
 - `scripts/watch_jobs.py`: flags stuck jobs and jobs whose metric lags a reference run, and cancels them on request.
+- `scripts/wait_jobs.sh`: blocks until a job finishes or fails (see "Waiting on jobs").
 
 ## Before you submit
 
@@ -25,7 +26,7 @@ Reference files (read when needed):
    not obvious, and don't guess.
 2. **Keep work off the login node.** Login sessions are capped at 6 GB RAM and 2 cores. Staff may kill heavy processes
    there without warning and suspend access. Fine on the login node: editing, `git`, `sbatch`/`squeue`/`sacct`, small
-   file inspection, tiny polling loops. Everything else (installs, downloads, data conversion, compilation of large
+   file inspection, `wait_jobs.sh`. Everything else (installs, downloads, data conversion, compilation of large
    projects, evaluation, anything over ~2 minutes) goes into a job. Never run processes on compute or GPU nodes outside
    Slurm; that can get UTHPC access revoked.
 3. **Use CPU nodes when no GPU is needed.** Partition `main` (8 days, 128-core / 1 TB AMD nodes) for data conversion,
@@ -77,12 +78,29 @@ Reference files (read when needed):
   (`Priority`, `Resources`, `ReqNodeNotAvail` = maintenance reservation, `DependencyNeverSatisfied` = cancel it).
   `squeue -j <id> --start` gives Slurm's (pessimistic) start estimate. `sprio -j <id>` and `sshare -U` show priority and
   fair share. If a job is blocked only by a too-narrow node list, widen it: `scontrol update job <id> ExcNodeList=...`.
-- **GPU use:** `srun --jobid <id> --overlap --pty nvidia-smi` (or `watch -n 5 nvidia-smi`). Below ~50% utilisation
-  means a data or CPU bottleneck: fix the loader, stage to `/tmp`, or use fewer GPUs.
+- **GPU use:** `srun --jobid <id> --overlap nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv`
+  (one snapshot, not `watch`). Below ~50% utilisation means a data or CPU bottleneck: fix the loader, stage to `/tmp`,
+  or use fewer GPUs.
 - **CPU and memory use:** `scripts/job_efficiency.py <id>` (`sstat`/`sacct`), or the ELK dashboard
   https://elk.hpc.ut.ee (per-minute CPU and memory utilisation, UT login).
 - **Logs:** always write stdout/stderr (`-o logs/%x-%j.out`) and print throughput (iterations/s) and key metrics
   periodically, so stuck or slow jobs are visible.
+
+## Waiting on jobs (token budget)
+
+Every wake re-processes your whole context, and short waits let the prompt cache expire, so each check-in re-pays it in
+full.
+- After submitting, wait with ONE blocking call: `${CLAUDE_SKILL_DIR}/scripts/wait_jobs.sh 50 <jobids>` with a Bash
+  timeout ≥ 51 min. It returns when any job leaves PENDING/RUNNING or after 50 min (keeps a 1 h cache warm). Never
+  schedule fixed 5/10/15-min check-ins and never `sleep` in separate tool calls.
+- On return, inspect compactly: its sacct lines plus `tail -n 15 <log>` or
+  `grep -m5 -iE 'error|nan|oom|Traceback' <log>`. Never cat whole logs or paste full nvidia-smi/squeue/sacct tables.
+- Nothing actionable changed? Call `wait_jobs.sh` again immediately, without commentary or re-analysis.
+- Remaining jobs need more than ~2 h? Write job IDs, purpose and expected finish to a small state file
+  (e.g. `state/<task>.json`) and return that summary to the caller instead of waiting.
+- Keep notes short; don't restate earlier findings on each wake.
+- For automatic stuck/lagging detection on long runs, run `scripts/watch_jobs.py` as a tiny CPU job. It is not an
+  LLM loop and costs no tokens.
 
 ## Cancel what is not worth finishing
 
@@ -91,7 +109,7 @@ Cancel without hesitation (`scancel <id>`; arrays `scancel <id>_[3-5]`):
 - **Broken:** NaN losses, repeated OOM restarts, wrong data path discovered after launch.
 - **Clearly losing:** in comparative experiments, a run whose validation metric is worse than its matched reference
   *at the same step/epoch* by more than the known noise margin. Compare at equal progress, not final vs early.
-  `scripts/watch_jobs.py` automates both checks (run it as a small CPU job or a light login-node loop).
+  `scripts/watch_jobs.py` automates both checks (run it as a small CPU job).
 - **Oversized:** a job using a fraction of its allocation. Cancel it and resubmit smaller; it lowers the bill.
 
 Report cancellations and their reason to the user.
