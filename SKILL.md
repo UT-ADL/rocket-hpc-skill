@@ -92,7 +92,9 @@ Every wake re-processes your whole context, and short waits let the prompt cache
 full.
 - After submitting, wait with ONE blocking call: `${CLAUDE_SKILL_DIR}/scripts/wait_jobs.sh 50 <jobids>` with a Bash
   timeout ≥ 51 min. It returns when any job leaves PENDING/RUNNING or after 50 min (keeps a 1 h cache warm). Never
-  schedule fixed 5/10/15-min check-ins and never `sleep` in separate tool calls.
+  schedule fixed 5/10/15-min check-ins and never `sleep` in separate tool calls. If the Bash tool caps the timeout at
+  10 min (`BASH_MAX_TIMEOUT_MS` not set in the session), call `wait_jobs.sh 9` back to back instead: a return within
+  the hour reads the cache rather than rewriting it.
 - On return, inspect compactly: its sacct lines plus `tail -n 15 <log>` or
   `grep -m5 -iE 'error|nan|oom|Traceback' <log>`. Never cat whole logs or paste full nvidia-smi/squeue/sacct tables.
 - Nothing actionable changed? Call `wait_jobs.sh` again immediately, without commentary or re-analysis.

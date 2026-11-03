@@ -70,6 +70,16 @@ Agents waiting on Slurm jobs burn most of their tokens re-processing context on 
   v2.1.242+).
 - `BASH_MAX_TIMEOUT_MS`: lets a single `scripts/wait_jobs.sh` call block for up to 55 minutes.
 
+Running sessions pick up `subagentPromptCacheTtl` the next time `settings.json` is saved (observed with Claude Code
+2.1.301: the TTL switched mid-turn, at the cost of one full cache re-write per agent, because the 5-minute and 1-hour
+caches are separate); `env` entries only reach sessions started after the change. Verify on a subagent's transcript:
+
+```bash
+grep -a -o 'ephemeral_1h_input_tokens":[0-9]*' ~/.claude/projects/<project>/<session>/subagents/agent-*.jsonl | tail
+```
+
+Non-zero values mean 1-hour cache writes. `"1h"` is ignored while a Claude subscription is in overage.
+
 ### Update and uninstall
 
 Existing installs pick up new versions (e.g. `scripts/wait_jobs.sh`) with a pull:
